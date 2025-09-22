@@ -1,0 +1,1 @@
+Get-FileHash -Path (Remove and insert file path)
