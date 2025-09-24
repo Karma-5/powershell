@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# <#
+# .SYNOPSIS
+#     The ultimate Bash script for comprehensive live-response forensic data collection on macOS.
+# .DESCRIPTION
+#     This script captures a wide range of volatile data and key artifacts from a macOS system.
+#     It is designed for live response, organizing collected data into a structured directory with a manifest file.
+#     - Captures system, network, and user information.
+#     - Exports key system logs and a timeline of recent activity.
+#     - Collects key persistence artifacts (LaunchDaemons/Agents, cron jobs).
+#     - Calculates and logs SHA256 hashes for all collected files to verify integrity.
+# .NOTES
+#     - **Execution:** Must be run with administrative privileges (`sudo`).
+#     - **Security:** For true forensic integrity, run from a read-only medium and save output to a separate,
+#       read-only drive to preserve the evidence chain.
+# #>
+
+# Define the output directory and manifest file
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+OUTPUT_DIR="/tmp/Forensic_Package_${TIMESTAMP}" # Use /tmp for quick access
+MANIFEST_FILE="${OUTPUT_DIR}/Forensic_Manifest.txt"
+
+# --- Function to Hash a File and Log ---
+function get_and_log_hash() {
+    FILE_PATH=$1
+    if [ -f "$FILE_PATH" ]; then
+        HASH=$(shasum -a 256 "$FILE_PATH" | awk '{print $1}')
+        echo "$(date +"%Y-%m-%d %H:%M:%S") - Hashed file: ${FILE_PATH} - SHA256: ${HASH}" >> "${MANIFEST_FILE}"
+    fi
+}
+
+# --- Main Script Body ---
+
+# Create the output directories
+echo "Creating forensic evidence directory structure..."
+mkdir -p "${OUTPUT_DIR}"
+mkdir -p "${OUTPUT_DIR}/System_Info"
+mkdir -p "${OUTPUT_DIR}/Network"
+mkdir -p "${OUTPUT_DIR}/Logs"
+mkdir -p "${OUTPUT_DIR}/Persistence"
+mkdir -p "${OUTPUT_DIR}/User_Artifacts"
+mkdir -p "${OUTPUT_DIR}/Browser_Info"
+
+# Start logging to the manifest file
+echo "Forensic Collection Started: $(date)" > "${MANIFEST_FILE}"
+echo "Collecting from Host: $(hostname)" >> "${MANIFEST_FILE}"
+echo "Collector User: $(whoami)" >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+echo "Starting data collection..."
+
+# --- 1. System Information and Volatile Data ---
+echo "## 1. System Information and Volatile Data ##" >> "${MANIFEST_FILE}"
+echo "Collecting system and hardware information..."
+system_profiler -detailLevel mini > "${OUTPUT_DIR}/System_Info/System_Profile.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/System_Profile.txt"
+uptime > "${OUTPUT_DIR}/System_Info/Uptime.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/Uptime.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 2. Live Processes and Open Files ---
+echo "## 2. Live Processes and Open Files ##" >> "${MANIFEST_FILE}"
+echo "Collecting running processes..."
+ps aux > "${OUTPUT_DIR}/System_Info/Process_List.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/Process_List.txt"
+echo "Collecting list of open files and network connections..."
+lsof -i -P -n > "${OUTPUT_DIR}/Network/Open_Files_Connections.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/Open_Files_Connections.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 3. Network Information ---
+echo "## 3. Network Information ##" >> "${MANIFEST_FILE}"
+echo "Collecting network configuration..."
+ifconfig -a > "${OUTPUT_DIR}/Network/Network_Config.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/Network_Config.txt"
+netstat -rn
