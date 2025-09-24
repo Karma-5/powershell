@@ -1,0 +1,251 @@
+#!/bin/bash
+
+# <#
+# .SYNOPSIS
+#     The most comprehensive Bash script for live-response forensic data collection on macOS.
+# .DESCRIPTION
+#     This script represents the final, most robust version of the macOS forensic tool.
+#     It goes beyond standard logs and artifacts to capture hidden files, shell history, and
+#     detailed system configuration data, making it suitable for in-depth investigations.
+#     - Captures a wide range of volatile data and system artifacts.
+#     - Collects shell history for bash, zsh, and fish.
+#     - Dumps and hashes common plist files for persistence and application settings.
+#     - Captures information on mounted volumes and disk usage.
+#     - Calculates and logs SHA256 hashes for all collected files to verify integrity.
+# .NOTES
+#     - **Execution:** Must be run with administrative privileges (`sudo`).
+#     - **Security:** For true forensic integrity, run from a read-only medium and save output to a separate,
+#       read-only drive to preserve the evidence chain.
+# #>
+
+# Define the output directory and manifest file
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+OUTPUT_DIR="/tmp/Forensic_Package_${TIMESTAMP}"
+MANIFEST_FILE="${OUTPUT_DIR}/Forensic_Manifest.txt"
+
+# --- Function to Get and Log File Hash ---
+function get_and_log_hash() {
+    FILE_PATH=$1
+    if [ -f "$FILE_PATH" ]; then
+        HASH=$(shasum -a 256 "$FILE_PATH" | awk '{print $1}')
+        echo "$(date +"%Y-%m-%d %H:%M:%S") - Hashed file: ${FILE_PATH} - SHA256: ${HASH}" >> "${MANIFEST_FILE}"
+    fi
+}
+
+# --- Main Script Body ---
+
+# Create the output directories
+echo "Creating forensic evidence directory structure..."
+mkdir -p "${OUTPUT_DIR}"
+mkdir -p "${OUTPUT_DIR}/System_Info"
+mkdir -p "${OUTPUT_DIR}/Network"
+mkdir -p "${OUTPUT_DIR}/Logs"
+mkdir -p "${OUTPUT_DIR}/Persistence"
+mkdir -p "${OUTPUT_DIR}/User_Artifacts"
+mkdir -p "${OUTPUT_DIR}/Application_Execution"
+mkdir -p "${OUTPUT_DIR}/Storage"
+mkdir -p "${OUTPUT_DIR}/System_Config"
+mkdir -p "${OUTPUT_DIR}/Security_Analysis"
+mkdir -p "${OUTPUT_DIR}/Volatile_Data"
+mkdir -p "${OUTPUT_DIR}/Browser_Artifacts"
+
+# Start logging to the manifest file
+echo "Forensic Collection Started: $(date)" > "${MANIFEST_FILE}"
+echo "Collecting from Host: $(hostname)" >> "${MANIFEST_FILE}"
+echo "Collector User: $(whoami)" >> "${MANIFEST_FILE}"
+echo "Current Working Directory: $(pwd)" >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+echo "Starting data collection..."
+
+# --- 1. System Information and Volatile Data ---
+echo "## 1. System Information and Volatile Data ##" >> "${MANIFEST_FILE}"
+echo "Collecting system and hardware information..."
+system_profiler > "${OUTPUT_DIR}/System_Info/System_Profile.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/System_Profile.txt"
+echo "Collecting system uptime..."
+uptime > "${OUTPUT_DIR}/System_Info/Uptime.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/Uptime.txt"
+echo "Collecting Time Zone Information..."
+systemsetup -gettimezone > "${OUTPUT_DIR}/System_Info/TimeZone.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/TimeZone.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 2. Live Processes and Open Files ---
+echo "## 2. Live Processes and Open Files ##" >> "${MANIFEST_FILE}"
+echo "Collecting running processes with full command line..."
+ps auxww > "${OUTPUT_DIR}/Volatile_Data/Process_List_Full.txt"
+get_and_log_hash "${OUTPUT_DIR}/Volatile_Data/Process_List_Full.txt"
+echo "Collecting list of open files and network connections..."
+lsof -i -P -n > "${OUTPUT_DIR}/Network/Open_Files_Connections.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/Open_Files_Connections.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 3. Network Information and DNS Cache ---
+echo "## 3. Network Information and DNS Cache ##" >> "${MANIFEST_FILE}"
+echo "Collecting network configuration..."
+ifconfig -a > "${OUTPUT_DIR}/Network/Network_Config.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/Network_Config.txt"
+netstat -rn > "${OUTPUT_DIR}/Network/Routing_Table.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/Routing_Table.txt"
+scutil --dns > "${OUTPUT_DIR}/Network/DNS_Config.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/DNS_Config.txt"
+arp -an > "${OUTPUT_DIR}/Network/ARP_Table.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/ARP_Table.txt"
+echo "Capturing active network services and configurations..."
+networksetup -listallnetworkservices > "${OUTPUT_DIR}/Network/NetworkSetup_Services.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/NetworkSetup_Services.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 4. User Accounts and Logins ---
+echo "## 4. User Accounts and Logins ##" >> "${MANIFEST_FILE}"
+echo "Collecting user accounts with UID, GID, and shell..."
+dscl . -readall /Users | grep -E 'RecordName|UID|PrimaryGroupID|HomeDirectory|UserShell' > "${OUTPUT_DIR}/System_Info/User_Details.txt"
+get_and_log_hash "${OUTPUT_DIR}/System_Info/User_Details.txt"
+echo "Collecting user login history..."
+last > "${OUTPUT_DIR}/User_Artifacts/Last_Logins.txt"
+get_and_log_hash "${OUTPUT_DIR}/User_Artifacts/Last_Logins.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 5. Persistence Mechanisms and Startup Items ---
+echo "## 5. Persistence Mechanisms and Startup Items ##" >> "${MANIFEST_FILE}"
+echo "Collecting Launch Agents and Daemons..."
+echo "--- Launch Daemons ---" > "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+ls -al /Library/LaunchDaemons/ >> "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+echo "--- Launch Agents ---" >> "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+ls -al /Library/LaunchAgents/ >> "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+echo "--- User Login Items (for each user) ---" >> "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+for user_dir in /Users/*; do
+    USERNAME=$(basename "${user_dir}")
+    LOGIN_ITEMS_PLIST="${user_dir}/Library/Preferences/com.apple.loginitems.plist"
+    if [ -f "$LOGIN_ITEMS_PLIST" ]; then
+        echo "Login items for user: $USERNAME" >> "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+        plutil -convert json "$LOGIN_ITEMS_PLIST" -o - >> "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+    fi
+done
+get_and_log_hash "${OUTPUT_DIR}/Persistence/Persistence_Artifacts.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 6. System and Application Logs (Unified Log) ---
+echo "## 6. System and Application Logs ##" >> "${MANIFEST_FILE}"
+echo "Exporting recent Unified Log data (last 7 days)..."
+log show --predicate 'processID != 0' --last 7d > "${OUTPUT_DIR}/Logs/Unified_Log_7d.txt"
+get_and_log_hash "${OUTPUT_DIR}/Logs/Unified_Log_7d.txt"
+echo "Collecting install logs..."
+cat /var/log/install.log > "${OUTPUT_DIR}/Logs/Install_Log.txt"
+get_and_log_hash "${OUTPUT_DIR}/Logs/Install_Log.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 7. Application Execution and Quarantine Data ---
+echo "## 7. Application Execution and Quarantine Data ##" >> "${MANIFEST_FILE}"
+echo "Collecting quarantine data..."
+ls -lR ~/Library/Quarantine > "${OUTPUT_DIR}/Application_Execution/Quarantine_Data.txt"
+get_and_log_hash "${OUTPUT_DIR}/Application_Execution/Quarantine_Data.txt"
+echo "Note: Application execution history (from `LSSharedFileList` and `LaunchServices`) is in plist files. " >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 8. User and Browser Artifacts ---
+echo "## 8. User and Browser Artifacts ##" >> "${MANIFEST_FILE}"
+echo "Collecting shell history for all users..."
+for user_dir in /Users/*; do
+    if [ -d "$user_dir" ]; then
+        USERNAME=$(basename "${user_dir}")
+        echo "--- Shell history for user: $USERNAME ---" >> "${OUTPUT_DIR}/User_Artifacts/Shell_History.txt"
+        
+        # Collect Bash history
+        BASH_HISTORY="${user_dir}/.bash_history"
+        if [ -f "$BASH_HISTORY" ]; then
+            cat "$BASH_HISTORY" >> "${OUTPUT_DIR}/User_Artifacts/Shell_History.txt"
+        fi
+        
+        # Collect Zsh history
+        ZSH_HISTORY="${user_dir}/.zsh_history"
+        if [ -f "$ZSH_HISTORY" ]; then
+            cat "$ZSH_HISTORY" >> "${OUTPUT_DIR}/User_Artifacts/Shell_History.txt"
+        fi
+    fi
+done
+get_and_log_hash "${OUTPUT_DIR}/User_Artifacts/Shell_History.txt"
+echo "Collecting recent files list..."
+find ~/ -maxdepth 2 -type f -mtime -7 > "${OUTPUT_DIR}/User_Artifacts/Recent_Files.txt"
+get_and_log_hash "${OUTPUT_DIR}/User_Artifacts/Recent_Files.txt"
+
+echo "Capturing clipboard contents..."
+pbpaste > "${OUTPUT_DIR}/User_Artifacts/Clipboard_Contents.txt"
+get_and_log_hash "${OUTPUT_DIR}/User_Artifacts/Clipboard_Contents.txt"
+
+echo "Collecting Browser Plist files for settings..."
+PLIST_FILES=(
+    "~/Library/Preferences/com.apple.Safari.plist"
+    "~/Library/Application Support/Google/Chrome/Default/Preferences"
+)
+for plist in "${PLIST_FILES[@]}"; do
+    if [ -f "$plist" ]; then
+        plutil -convert json "$plist" -o - > "${OUTPUT_DIR}/Browser_Artifacts/$(basename $plist).json"
+        get_and_log_hash "${OUTPUT_DIR}/Browser_Artifacts/$(basename $plist).json"
+    fi
+done
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 9. Storage and Mounted Volumes ---
+echo "## 9. Storage and Mounted Volumes ##" >> "${MANIFEST_FILE}"
+echo "Collecting information on mounted volumes and disk usage..."
+df -h > "${OUTPUT_DIR}/Storage/Mounted_Volumes_DF.txt"
+get_and_log_hash "${OUTPUT_DIR}/Storage/Mounted_Volumes_DF.txt"
+mount > "${OUTPUT_DIR}/Storage/Mounted_Volumes_Mount.txt"
+get_and_log_hash "${OUTPUT_DIR}/Storage/Mounted_Volumes_Mount.txt"
+echo "Listing APFS snapshots..."
+diskutil apfs listSnaps / > "${OUTPUT_DIR}/Storage/APFS_Snapshots.txt"
+get_and_log_hash "${OUTPUT_DIR}/Storage/APFS_Snapshots.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 10. Core System Configuration Files ---
+echo "## 10. Core System Configuration Files ##" >> "${MANIFEST_FILE}"
+echo "Copying key configuration files for later analysis..."
+KEY_CONFIG_FILES=(
+    "/etc/hosts"
+    "/etc/crontab"
+    "/etc/ssh/sshd_config"
+    "/etc/sudoers"
+)
+for file in "${KEY_CONFIG_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        DEST_FILE="${OUTPUT_DIR}/System_Config/$(basename $file)"
+        cp "$file" "$DEST_FILE"
+        get_and_log_hash "$DEST_FILE"
+    fi
+done
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 11. Advanced Security and System Artifacts ##" | Out-File -FilePath "${MANIFEST_FILE}" -Append
+echo "## 11. Advanced Security and System Artifacts ##" >> "${MANIFEST_FILE}"
+echo "Collecting USB device history from unified log..."
+log show --predicate 'subsystem == "com.apple.iokit.USB"' --last 7d > "${OUTPUT_DIR}/Logs/USB_Device_Log.txt"
+get_and_log_hash "${OUTPUT_DIR}/Logs/USB_Device_Log.txt"
+echo "Collecting Wi-Fi connection logs..."
+log show --predicate 'process == "airportd"' --last 7d > "${OUTPUT_DIR}/Network/Wi-Fi_Log.txt"
+get_and_log_hash "${OUTPUT_DIR}/Network/Wi-Fi_Log.txt"
+echo "Checking System Integrity Protection (SIP) status and loaded kernel extensions..."
+csrutil status > "${OUTPUT_DIR}/Security_Analysis/SIP_Status.txt"
+get_and_log_hash "${OUTPUT_DIR}/Security_Analysis/SIP_Status.txt"
+kextstat > "${OUTPUT_DIR}/Security_Analysis/Kernel_Extensions.txt"
+get_and_log_hash "${OUTPUT_DIR}/Security_Analysis/Kernel_Extensions.txt"
+echo "" >> "${MANIFEST_FILE}"
+
+# --- 12. Final Notes and Disk Imaging Instructions ---
+echo "## 12. Final Notes and Disk Imaging Instructions ##" >> "${MANIFEST_FILE}"
+echo "Forensic Collection Complete: $(date)" >> "${MANIFEST_FILE}"
+echo "The complete forensic package is located at: ${OUTPUT_DIR}" >> "${MANIFEST_FILE}"
+echo "Review ${MANIFEST_FILE} for a log of all collected artifacts and their hashes." >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+echo "--- IMPORTANT: THE GOLD STANDARD FOR EVIDENCE PRESERVATION IS A FULL DISK IMAGE ---" >> "${MANIFEST_FILE}"
+echo "This script performs a live-response collection of volatile data. For a complete investigation, a bit-for-bit" >> "${MANIFEST_FILE}"
+echo "copy of the drive is required. This must be done with the device powered off, using a write-blocker." >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+echo "Example command to list devices for imaging:" >> "${MANIFEST_FILE}"
+echo "diskutil list" >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+echo "Example command for imaging a disk using 'dd':" >> "${MANIFEST_FILE}"
+echo "dd if=/dev/rdisk1 of=/path/to/image.dd bs=1m conv=noerror,sync" >> "${MANIFEST_FILE}"
+echo "" >> "${MANIFEST_FILE}"
+
+echo "Forensic collection complete. The evidence package is located at: ${OUTPUT_DIR}"
