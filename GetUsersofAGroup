@@ -1,0 +1,1 @@
+Get-ADGroupMember -identity “HR Full”
