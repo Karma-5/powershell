@@ -1,0 +1,42 @@
+# Get the current user's home directory
+$userPath = $env:USERPROFILE
+
+# Define the source directories to back up
+$sourceDirs = @(
+    "$userPath\Desktop",
+    "$userPath\Documents",
+    "$userPath\Downloads",
+    "$userPath\Music",
+    "$userPath\Pictures",
+    "$userPath\Videos"
+)
+
+# Define the destination drive and folder. Change 'E:\' to your preferred backup drive.
+$destinationDrive = "E:"
+$destinationFolder = "Windows11_Backup_$(Get-Date -Format 'yyyy-MM-dd')"
+$destinationPath = Join-Path -Path $destinationDrive -ChildPath $destinationFolder
+
+# Check if the destination drive exists
+if (-not (Test-Path $destinationDrive)) {
+    Write-Host "Destination drive '$destinationDrive' does not exist. Please check your drive letter and try again." -ForegroundColor Red
+    exit
+}
+
+# Create the destination folder if it doesn't exist
+if (-not (Test-Path $destinationPath)) {
+    New-Item -ItemType Directory -Path $destinationPath -Force
+    Write-Host "Created new backup folder: $destinationPath" -ForegroundColor Green
+}
+
+# Loop through each source directory and copy its contents
+foreach ($dir in $sourceDirs) {
+    if (Test-Path $dir) {
+        Write-Host "Backing up contents of: $dir" -ForegroundColor Yellow
+        Copy-Item -Path "$dir\*" -Destination "$destinationPath\$($dir | Split-Path -Leaf)" -Recurse -Force
+    } else {
+        Write-Host "Source directory not found, skipping: $dir" -ForegroundColor Gray
+    }
+}
+
+Write-Host ""
+Write-Host "Backup complete! All selected user folders have been copied to: $destinationPath" -ForegroundColor Green
