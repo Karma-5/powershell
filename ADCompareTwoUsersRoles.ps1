@@ -1,0 +1,1 @@
+Compare-Object -ReferenceObject (Get-AdPrincipalGroupMembership $User1| select name | sort-object -Property name) -DifferenceObject (Get-AdPrincipalGroupMembership $User2| select name | sort-object -Property name) -property name -PassThru| Export-csv "C:\Temp$User2-$User1.csv" 
